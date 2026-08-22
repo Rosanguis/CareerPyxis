@@ -55,6 +55,17 @@ npm run build
 
 ## 5. Vercel 部署
 
+当前生产 Demo：https://career-pyxis.vercel.app
+
+部署状态（2026-08-22）：Vercel 项目 `career-pyxis/career-pyxis` 已创建，
+生产 deployment `dpl_8NZF7XBSqVugjoYQHwpeGbAP4SLM` 为 Ready，正式域名已绑定。
+生产环境使用 `DATA_MODE=mock`，且未上传 `DEEPSEEK_API_KEY`。线上首页、追问、
+夯/稳/拉三路径报告、七日行动、来源与贡献草稿均已完成冒烟验证，生产错误日志为空。
+
+Vercel 账号当前尚未建立 GitHub Login Connection，因此本次通过官方 CLI 部署，
+`git push` 自动部署暂未启用。完成 GitHub 账号连接后，可在项目设置中连接
+`Rosanguis/CareerPyxis`。
+
 1. 在 Vercel 导入 GitHub 仓库 `Rosanguis/CareerPyxis`。
 2. Framework Preset 选择 Next.js，Build Command 保持 `npm run build`。
 3. 先以 Mock 模式建立一个稳定的演示部署：

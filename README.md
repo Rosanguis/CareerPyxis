@@ -5,6 +5,11 @@
 情境题和带来源的职业资料整理成三条按“夯 / 稳 / 拉”排序的验证路径，
 并为每条路径给出一项七天行动。
 
+生产 Demo：https://career-pyxis.vercel.app
+
+生产环境固定使用 `DATA_MODE=mock`，用于黑客松现场稳定演示；本地 Live
+链路已使用 DeepSeek V4 Flash 与官方 Harness 完成端到端验证。
+
 ## 本次 SSAI Demo
 
 默认示例是“缺少正式实习、拥有课程或校园项目经历、正在相邻职业方向

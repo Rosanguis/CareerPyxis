@@ -31,7 +31,8 @@
 - 页面运行日志：未发现业务 `error`；仅开发模式 React DevTools/HMR 信息。
 - API Mock 冒烟：3 道初始题、3 个动态追问候选、3 条路径、“夯稳拉”顺序、3 个来源均符合预期。
 - TypeScript、ESLint 和 Next.js 生产构建通过。
-- 390×844 自动化视口切换在浏览器连接层出现两次超时，未形成可靠截图；CSS 已按 720/460px 断点实现，但上台前仍建议用真机或 Chrome DevTools 做一次视觉复核。
+- 390×844 隔离浏览器完成 Live 报告视觉验收，标题、步骤条、实时资料提示和导师卡片未出现横向溢出；验收图保存为 `D:/Codex/outputs/CareerPyxis-live-mobile-390x844.png`。上台前仍建议用现场真机再快速复核一次。
+- 首次隔离浏览器暴露 `navigator.onLine` 导致的 hydration mismatch 和请求硬拦截；已改为服务端一致的初始状态，挂载后再更新网络提示，同时允许真实 fetch 判断连接结果。
 
 ## 上台前 10 分钟检查
 

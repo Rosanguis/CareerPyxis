@@ -22,7 +22,6 @@ function requestId() {
 }
 
 async function apiCall<T>(payload: object): Promise<T> {
-  if (!navigator.onLine) throw new Error("当前网络不可用。你的内容已保存，请恢复网络后重试。");
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 95_000);
   try {
@@ -187,7 +186,7 @@ export default function CareerExplorer() {
   const [questionsFallback, setQuestionsFallback] = useState(false);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [error, setError] = useState("");
-  const [offline, setOffline] = useState(() => typeof navigator !== "undefined" && !navigator.onLine);
+  const [offline, setOffline] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [shareStep, setShareStep] = useState<ShareStep>("closed");
   const [shareDraft, setShareDraft] = useState<ContributionDraft | null>(null);
@@ -196,6 +195,7 @@ export default function CareerExplorer() {
     const online = () => setOffline(false); const offlineHandler = () => setOffline(true);
     window.addEventListener("online", online); window.addEventListener("offline", offlineHandler);
     window.requestAnimationFrame(() => {
+      setOffline(!navigator.onLine);
       try {
         const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null") as SavedState | null;
         if (saved?.profile) {

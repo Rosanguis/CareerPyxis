@@ -184,10 +184,34 @@ export async function generateReport(profileInput: Profile, answers: Answer[], r
 
   const partial = await withRetry(async (stageSignal) => {
     const generated = await provider.generateJson<Omit<CareerReport, "sources" | "sourceMode" | "generatedAt" | "requestId" | "dataNotice">>(SYSTEM_RULES, reportPrompt(profile, answers, discovery, sources), stageSignal);
-    const candidate: CareerReport = { ...generated, sources, sourceMode, generatedAt: "", requestId, dataNotice: "" };
     const sourceIds = new Set(sources.map((source) => source.id));
+    for (const path of generated.rankedPaths ?? []) {
+      for (const item of path.evidenceItems ?? []) {
+        const requestedIds = Array.isArray(item.sourceIds) ? item.sourceIds : [];
+        item.sourceIds = requestedIds.filter((id) => sourceIds.has(id));
+        if (requestedIds.length > item.sourceIds.length && item.sourceIds.length === 0 && ["检索资料", "已核验职业事实", "缓存资料"].includes(item.label)) {
+          item.label = "AI 推断";
+          item.content = `${item.content}（来源引用未通过校验，需继续核实。）`;
+        }
+      }
+    }
+    const candidate: CareerReport = { ...generated, sources, sourceMode, generatedAt: "", requestId, dataNotice: "" };
     const referencesAreValid = candidate.rankedPaths?.every((path) => path.evidenceItems?.every((item) => item.sourceIds?.every((id) => sourceIds.has(id))));
-    if (!reportIsValid(candidate) || !referencesAreValid) throw new ProviderError("报告结构或来源引用校验失败。", "INVALID_OUTPUT", true);
+    if (!reportIsValid(candidate) || !referencesAreValid) {
+      console.warn(JSON.stringify({
+        requestId,
+        event: "report_validation_failed",
+        priorities: candidate.rankedPaths?.map((path) => path.priority),
+        mentorCount: candidate.mentorObservations?.length,
+        pathCount: candidate.rankedPaths?.length,
+        evidenceCounts: candidate.rankedPaths?.map((path) => path.evidenceItems?.length ?? 0),
+        actionArrayCounts: candidate.rankedPaths?.map((path) => [path.sevenDayAction?.doneCriteria?.length ?? 0, path.sevenDayAction?.continueIf?.length ?? 0, path.sevenDayAction?.adjustIf?.length ?? 0, path.sevenDayAction?.exitIf?.length ?? 0]),
+        globalUncertaintyCount: candidate.globalUncertainties?.length ?? 0,
+        sourceCount: sources.length,
+        referencesAreValid,
+      }));
+      throw new ProviderError("报告结构或来源引用校验失败。", "INVALID_OUTPUT", true);
+    }
     return generated;
   }, signal, 40_000);
   const report: CareerReport = {

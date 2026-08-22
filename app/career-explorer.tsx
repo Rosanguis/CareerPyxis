@@ -23,7 +23,9 @@ function requestId() {
 
 async function apiCall<T>(payload: object): Promise<T> {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), 95_000);
+  // Keep the browser deadline slightly above the server deadline so the API can
+  // return its structured timeout response instead of being cancelled first.
+  const timer = window.setTimeout(() => controller.abort(), 125_000);
   try {
     const response = await fetch("/api/explore", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), signal: controller.signal });
     const data = await response.json() as T | ApiErrorBody;

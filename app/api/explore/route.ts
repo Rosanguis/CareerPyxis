@@ -3,7 +3,9 @@ import { generateContribution, generateQuestions, generateReport } from "@/lib/s
 import { ProviderError } from "@/lib/server/model-provider";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+// Leave headroom above the 120s application deadline so Vercel can serialize
+// and return the API's structured timeout response instead of terminating it.
+export const maxDuration = 150;
 const MAX_BODY_BYTES = 32_000;
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
 
@@ -79,7 +81,7 @@ export async function POST(request: Request) {
     return errorResponse(new ProviderError("请求 JSON 无法解析。", "INVALID_OUTPUT", false), fallbackId);
   }
   const requestId = typeof body.requestId === "string" && body.requestId.length <= 80 ? body.requestId : fallbackId;
-  const hardDeadline = AbortSignal.timeout(90_000);
+  const hardDeadline = AbortSignal.timeout(120_000);
   try {
     if (body.mode === "generate_questions") return Response.json(await generateQuestions(body.profile, requestId, hardDeadline));
     if (body.mode === "generate_report") return Response.json(await generateReport(body.profile, body.answers, requestId, hardDeadline));

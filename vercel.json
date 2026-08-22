@@ -3,7 +3,7 @@
   "regions": ["hkg1"],
   "functions": {
     "app/api/explore/route.ts": {
-      "maxDuration": 120
+      "maxDuration": 150
     }
   }
 }

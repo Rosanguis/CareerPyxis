@@ -100,9 +100,9 @@ export class DeepSeekProvider implements ModelProvider {
     if (!this.key) throw new ProviderError("未配置 DEEPSEEK_API_KEY。", "AUTH_ERROR", false);
     const body = {
       model: this.model,
-      max_tokens: 2400,
+      max_tokens: 4096,
       messages: [{ role: "user", content: [{ type: "text", text: `Perform a web search for the query: ${query}` }] }],
-      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 1 }],
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
     };
     let response: Response;
     try {

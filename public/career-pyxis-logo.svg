@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" role="img" aria-labelledby="logo-title logo-description">
+  <title id="logo-title">职途罗盘</title>
+  <desc id="logo-description">黑色圆形中的白色罗盘指针</desc>
+  <circle cx="40" cy="40" r="36" fill="#000000"/>
+  <path d="M40 13L53 59L40 51L27 59L40 13Z" fill="#FFFFFF"/>
+</svg>

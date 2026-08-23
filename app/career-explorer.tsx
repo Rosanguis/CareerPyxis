@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EMPTY_PROFILE, EXAMPLE_PROFILE, MENTOR_META, TASK_OPTIONS, VALUE_OPTIONS } from "@/lib/constants";
 import type { Answer, ApiErrorBody, CareerReport, ContributionDraft, EvidenceLabel, Profile, Question, QuestionFallbackReason, QuestionsResponse } from "@/lib/types";
@@ -44,7 +45,10 @@ function BrandHeader({ stage, onHome }: { stage: Stage; onHome: () => void }) {
   return (
     <header className="site-header">
       <button className="brand brand-button" type="button" onClick={onHome} aria-label="返回职途罗盘首页">
-        <span className="brand-mark" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="12,2 15,9 12,7 9,9"/><line x1="12" y1="7" x2="12" y2="17"/><polygon points="12,22 9,15 12,17 15,15"/></svg></span><span>职途罗盘</span>
+        <span className="brand-mark" aria-hidden="true">
+          <Image src="/career-pyxis-logo.svg" alt="" width={34} height={34} priority unoptimized />
+        </span>
+        <span>职途罗盘</span>
       </button>
       {stage !== "intro" && (
         <ol className="stepper" aria-label="探索进度">

@@ -429,17 +429,20 @@ async function createSearchPlan(profile: JobSearchProfile, path: JobPathInput, s
   }
 }
 
-function searchQueries(plan: JobSearchPlan): string[] {
-  const exact = plan.exactTitles.map((title) => `"${title}"`).join(" OR ");
-  const expandedTitles = [...plan.synonymTitles, ...plan.adjacentTitles];
-  const expanded = expandedTitles.map((title) => `"${title}"`).join(" OR ") || exact;
-  const locations = plan.locationTerms.length > 0 ? `(${plan.locationTerms.join(" OR ")})` : "";
-  const primaryAts = "(site:boards.greenhouse.io OR site:job-boards.greenhouse.io OR site:job-boards.eu.greenhouse.io OR site:jobs.lever.co OR site:jobs.eu.lever.co OR site:jobs.ashbyhq.com)";
-  const expandedAts = "(site:jobs.smartrecruiters.com OR site:myworkdayjobs.com OR site:job-boards.greenhouse.io OR site:jobs.lever.co OR site:jobs.ashbyhq.com)";
+function searchQueries(plan: JobSearchPlan, profile: JobSearchProfile): string[] {
+  const titles = (items: string[]) => items.slice(0, 2).map((title) => `"${title}"`).join(" OR ");
+  const exact = titles(plan.exactTitles);
+  const synonyms = titles(plan.synonymTitles) || exact;
+  const adjacent = titles([...plan.adjacentTitles, ...plan.synonymTitles.slice(2)]) || synonyms;
+  const locations = plan.locationTerms.length > 0 ? `(${plan.locationTerms.slice(0, 2).join(" OR ")})` : "";
+  const isEarlyCareer = /应届|毕业生|学生|在校|无正式|实习|intern|student|graduate|entry[- ]level|junior/iu.test(profile.experienceSummary);
+  const stage = isEarlyCareer ? "(intern OR internship OR graduate OR junior OR associate OR assistant OR 实习 OR 校招 OR 应届 OR 助理)" : "";
+  const startupAts = "(site:boards.greenhouse.io OR site:job-boards.greenhouse.io OR site:job-boards.eu.greenhouse.io OR site:jobs.lever.co OR site:jobs.eu.lever.co OR site:jobs.ashbyhq.com)";
+  const enterpriseAts = "(site:jobs.smartrecruiters.com OR site:myworkdayjobs.com)";
   return [
-    `current open direct job postings (${exact}) ${locations} ${primaryAts}`,
-    `current open direct job postings (${expanded}) ${locations} ${expandedAts}`,
-    `正在招聘 (${expanded}) ${locations} (site:myworkdayjobs.com OR site:jobs.smartrecruiters.com)`,
+    `current open job (${exact}) ${locations} ${stage} ${startupAts}`,
+    `current open job (${synonyms}) ${locations} ${stage} ${enterpriseAts}`,
+    `正在招聘 (${adjacent}) ${locations} ${stage} (${startupAts} OR ${enterpriseAts})`,
   ];
 }
 
@@ -516,7 +519,7 @@ export async function verifyJobsForPath(
   const provider = createProvider();
   const plan = await createSearchPlan(profile, path, signal);
   const scopes = searchedScopes(plan);
-  const queries = searchQueries(plan);
+  const queries = searchQueries(plan, profile);
   const searchResults = await Promise.allSettled(queries.map((query) => provider.searchWeb(query, AbortSignal.any([signal, AbortSignal.timeout(14_000)]), 6)));
   const batches = searchResults.map((result) => result.status === "fulfilled" ? result.value : []);
   const evidence: WebEvidence[] = [];

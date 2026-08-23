@@ -29,9 +29,9 @@ DeepSeek 实现有两类请求：
 
 项目没有单独的 SearchProvider，也不会把 API Key 发往浏览器。
 
-报告生成成功后，前端会对三个职业方向依次调用 `POST /api/job-verification`。该接口沿用同一个 provider 的搜索能力，先把报告方向与内置英文市场别名合并，再生成同义方向与相邻起步岗，并行执行三条较短的分层搜索；画像明确为应届、学生或无正式经验时，检索会加入实习、校招、助理、graduate、junior、associate 等阶段词。候选通过 Greenhouse、Lever、Ashby、SmartRecruiters 或 Workday 官方公开接口二次确认是否仍发布且仍可申请。它不会延长主报告等待时间。
+报告生成成功后，前端会对三个职业方向依次调用 `POST /api/job-verification`。该接口沿用同一个 provider 的搜索能力，先把报告方向与内置英文市场别名合并，再生成同义方向与相邻起步岗，并行执行分层搜索；画像明确为应届、学生或无正式经验时，检索会加入实习、校招、助理、graduate、junior、associate 等阶段词。国际候选通过 Greenhouse、Lever、Ashby、SmartRecruiters 或 Workday 官方公开接口二次确认；国内校招增加北森 `*.zhiye.com` 企业官方详情页，只接受受限详情路径、同域申请入口和仍显示“申请职位”的页面。高校就业网、求职平台和搜索摘要仅用于发现企业及岗位线索，不作为最终投递链接。它不会延长主报告等待时间。
 
-DeepSeek 原生搜索参数对齐 `deepseek-ai/deepseek-harness`：单次搜索请求最多使用 5 次 `web_search_20250305`，`max_tokens=4096`。应用层每条查询最多接收 6 个结果、每个方向最多读取 8 个官方候选，因此增加的是线索发现机会，不会绕过官方状态和匹配核验。
+DeepSeek 原生搜索参数对齐 `deepseek-ai/deepseek-harness`：单次搜索请求最多使用 5 次 `web_search_20250305`，`max_tokens=4096`。应用层每条查询最多接收 6 个结果、每个方向最多读取 8 个官方候选，因此增加的是线索发现机会，不会绕过官方状态和匹配核验。国内校招会额外执行北森来源查询，因此总查询层数为四层。
 
 ## OpenAI 备选模式
 

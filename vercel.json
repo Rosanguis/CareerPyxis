@@ -4,6 +4,9 @@
   "functions": {
     "app/api/explore/route.ts": {
       "maxDuration": 150
+    },
+    "app/api/job-verification/route.ts": {
+      "maxDuration": 75
     }
   }
 }

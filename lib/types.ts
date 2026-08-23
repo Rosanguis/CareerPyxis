@@ -121,6 +121,56 @@ export interface CareerReport {
   dataNotice: string;
 }
 
+export type JobVerificationStatus = "verified" | "empty" | "unavailable" | "mock";
+export type JobAts = "Greenhouse" | "Lever" | "Ashby";
+
+export interface JobPathInput {
+  priority: Priority;
+  title: string;
+  field: string;
+  entryRequirements: string[];
+}
+
+export interface JobSearchProfile {
+  experienceSummary: string;
+  location: string;
+  skills: string;
+  likedTasks: string[];
+  dislikedTasks: string[];
+  workValues: string[];
+}
+
+export interface VerifiedJob {
+  id: string;
+  pathTitle: string;
+  title: string;
+  company: string;
+  location: string;
+  workMode: string;
+  employmentType: string;
+  url: string;
+  applyUrl: string;
+  ats: JobAts;
+  publishedAt?: string;
+  matchReasons: string[];
+  cautions: string[];
+  verificationSignals: string[];
+  verifiedAt: string;
+}
+
+export interface JobVerificationResponse {
+  requestId: string;
+  reportRequestId: string;
+  pathTitle: string;
+  status: JobVerificationStatus;
+  jobs: VerifiedJob[];
+  checkedCount: number;
+  rejectedCount: number;
+  verifiedAt: string;
+  message: string;
+  notice: string;
+}
+
 export interface ContributionDraft {
   field: string;
   experienceType: string;
@@ -138,6 +188,13 @@ export type ExploreRequest =
   | { mode: "generate_questions"; requestId: string; profile: Profile }
   | { mode: "generate_report"; requestId: string; profile: Profile; answers: Answer[] }
   | { mode: "generate_contribution_draft"; requestId: string; profile: Profile; experienceType: string; authorized: boolean };
+
+export interface JobVerificationRequest {
+  requestId: string;
+  reportRequestId: string;
+  profile: JobSearchProfile;
+  path: JobPathInput;
+}
 
 export interface ApiErrorBody {
   error: { code: string; message: string; retryable: boolean; stage?: string };

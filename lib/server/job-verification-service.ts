@@ -257,6 +257,7 @@ async function discoverBeisenApiJobs(
   plan: JobSearchPlan,
   profile: JobSearchProfile,
   parentSignal: AbortSignal,
+  includeSeeds = true,
 ): Promise<OfficialJob[]> {
   type BeisenListJob = {
     Id?: string;
@@ -275,10 +276,11 @@ async function discoverBeisenApiJobs(
   };
   type BeisenListResponse = { Code?: number; Data?: BeisenListJob[] };
   const discovered = evidence.map((item) => beisenTenantFromUrl(item.url)).filter((item): item is { site: string; host: string } => Boolean(item));
-  const tenants = [...new Map<string, { site: string; host: string; company: string }>([
-    ...BEISEN_TENANT_SEEDS.map((item) => [item.host, item] as const),
-    ...discovered.map((item) => [item.host, { ...item, company: "" }] as const),
-  ]).values()].slice(0, 2);
+  const seedHosts = new Set<string>(BEISEN_TENANT_SEEDS.map((item) => item.host));
+  const tenantEntries = includeSeeds
+    ? BEISEN_TENANT_SEEDS.map((item) => [item.host, item] as const)
+    : discovered.filter((item) => !seedHosts.has(item.host)).map((item) => [item.host, { ...item, company: "" }] as const);
+  const tenants = [...new Map<string, { site: string; host: string; company: string }>(tenantEntries).values()].slice(0, includeSeeds ? 1 : 2);
   const keywords = domesticApiKeywords(plan);
   if (keywords.length === 0) return [];
   const isEarlyCareer = /应届|毕业生|学生|在校|无正式|实习|intern|student|graduate|entry[- ]level|junior/iu.test(profile.experienceSummary);
@@ -287,7 +289,7 @@ async function discoverBeisenApiJobs(
     const pageTitle = landing?.match(/<title\b[^>]*>([\s\S]*?)<\/title>/iu)?.[1];
     const company = tenant.company || htmlText(pageTitle ?? "").replace(/(?:官方)?招聘.*$/u, "").trim() || displaySiteName(tenant.site);
     const keywordResults = await Promise.all(keywords.map(async (keyword) => {
-    const signal = AbortSignal.any([parentSignal, AbortSignal.timeout(14_000)]);
+    const signal = AbortSignal.any([parentSignal, AbortSignal.timeout(22_000)]);
     const url = `https://${tenant.host}/api/Jobad/GetJobAdPageList`;
     const body = JSON.stringify({
       PageIndex: 0,
@@ -769,6 +771,7 @@ export async function verifyJobsForPath(
   const plan = await createSearchPlan(profile, path, signal);
   const scopes = searchedScopes(plan);
   const queries = searchQueries(plan, profile);
+  const seededBeisenPromise = discoverBeisenApiJobs([], plan, profile, signal, true);
   const searchResults = await Promise.allSettled(queries.map((query) => provider.searchWeb(query, AbortSignal.any([signal, AbortSignal.timeout(14_000)]), 6)));
   const batches = searchResults.map((result) => result.status === "fulfilled" ? result.value : []);
   const evidence: WebEvidence[] = [];
@@ -781,10 +784,12 @@ export async function verifyJobsForPath(
   const internationalDescriptors = deduplicated.filter((item) => item.ats !== "Beisen").slice(0, MAX_OFFICIAL_CANDIDATES - domesticDescriptors.length);
   const uniqueDescriptors = [...domesticDescriptors, ...internationalDescriptors];
 
-  const [verifiedDescriptors, discoveredBeisenJobs] = await Promise.all([
+  const seededBeisenJobs = await seededBeisenPromise;
+  const [verifiedDescriptors, dynamicBeisenJobs] = await Promise.all([
     Promise.all(uniqueDescriptors.map((descriptor) => verifyDescriptor(descriptor, signal))),
-    discoverBeisenApiJobs(evidence, plan, profile, signal),
+    seededBeisenJobs.length > 0 ? Promise.resolve([]) : discoverBeisenApiJobs(evidence, plan, profile, signal, false),
   ]);
+  const discoveredBeisenJobs = [...seededBeisenJobs, ...dynamicBeisenJobs];
   const officialJobs = [...new Map([
     ...verifiedDescriptors.filter((job): job is OfficialJob => Boolean(job)),
     ...discoveredBeisenJobs,

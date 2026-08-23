@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EMPTY_PROFILE, EXAMPLE_PROFILE, MENTOR_META, TASK_OPTIONS, VALUE_OPTIONS } from "@/lib/constants";
-import type { Answer, ApiErrorBody, CareerReport, ContributionDraft, EvidenceLabel, Profile, Question, QuestionsResponse } from "@/lib/types";
+import type { Answer, ApiErrorBody, CareerReport, ContributionDraft, EvidenceLabel, Profile, Question, QuestionFallbackReason, QuestionsResponse } from "@/lib/types";
 
 type Stage = "intro" | "profile" | "questions" | "generating_report" | "report";
 type ShareStep = "closed" | "permission" | "loading" | "draft" | "submitted";
-type SavedState = { stage: Stage; profile: Profile; questions: Question[]; followUps: Question[]; answers: Answer[]; report: CareerReport | null; savedAt: string };
+type SavedState = { stage: Stage; profile: Profile; questions: Question[]; followUps: Question[]; questionFallback: QuestionFallbackReason | null; answers: Answer[]; report: CareerReport | null; savedAt: string };
 
 const STORAGE_KEY = "career-pyxis-exploration-v1";
 const SHARE_KEY = "career-pyxis-contribution-v1";
@@ -23,7 +23,9 @@ function requestId() {
 
 async function apiCall<T>(payload: object): Promise<T> {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), 95_000);
+  // Keep the browser deadline slightly above the server deadline so the API can
+  // return its structured timeout response instead of being cancelled first.
+  const timer = window.setTimeout(() => controller.abort(), 125_000);
   try {
     const response = await fetch("/api/explore", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), signal: controller.signal });
     const data = await response.json() as T | ApiErrorBody;
@@ -103,7 +105,7 @@ function MentorRail({ current }: { current: Question["mentor"] }) {
   return <div className="mentor-rail" aria-label="三位导师"><span className="rail-line" />{(["builder", "investor", "storyteller"] as const).map((mentor) => <div key={mentor} className={`rail-mentor mentor-tone-${mentor} ${current === mentor ? "is-current" : ""}`}><span>{MENTOR_META[mentor].icon}</span><div><strong>{MENTOR_META[mentor].name}</strong><small>{MENTOR_META[mentor].short}</small></div></div>)}</div>;
 }
 
-function QuestionFlow({ questions, answers, setAnswers, onBack, isFallback }: { questions: Question[]; answers: Answer[]; setAnswers: (answers: Answer[]) => void; onBack: () => void; isFallback: boolean }) {
+function QuestionFlow({ questions, answers, setAnswers, onBack, fallbackReason }: { questions: Question[]; answers: Answer[]; setAnswers: (answers: Answer[]) => void; onBack: () => void; fallbackReason: QuestionFallbackReason | null }) {
   const index = Math.min(answers.length, questions.length - 1);
   const question = questions[index];
   const [pending, setPending] = useState<Answer | null>(null);
@@ -115,7 +117,7 @@ function QuestionFlow({ questions, answers, setAnswers, onBack, isFallback }: { 
     <aside><p className="eyebrow">02 · 四道动态情境题</p><MentorRail current={question.mentor} /><button className="text-button" type="button" onClick={onBack}>← 返回修改经历</button></aside>
     <div className="question-panel panel">
       <div className="question-top"><span className={`mentor-avatar mentor-tone-${question.mentor}`}>{MENTOR_META[question.mentor].icon}</span><div><small>{MENTOR_META[question.mentor].name}</small><strong>{index + 1} / 4</strong></div></div>
-      {isFallback && <div className="notice-banner">个性化问题暂时未能生成，已切换到通用探索题，你仍然可以继续完成体验。</div>}
+      {fallbackReason && <div className="notice-banner" role="status">个性化问题生成未完成（{fallbackReason.label}），已切换到通用探索题，你仍然可以继续体验。</div>}
       {index === 3 && <p className="followup-hint">导师团发现这里还有一个值得确认的地方：{question.triggerReason}</p>}
       <h2>{question.prompt}</h2>
       <div className="option-list">{question.options.map((option, optionIndex) => <button type="button" className={`option-card ${pending?.optionId === option.id ? "is-selected" : ""}`} key={option.id} onClick={() => choose(option)}><span>{String.fromCharCode(65 + optionIndex)}</span><p>{option.label}</p><i aria-hidden="true">{pending?.optionId === option.id ? "✓" : "→"}</i></button>)}<button type="button" className={`option-card option-custom ${pending?.optionId === "custom" ? "is-selected" : ""}`} onClick={chooseCustom}><span>＋</span><p>都不符合，我想补充一句</p><i aria-hidden="true">→</i></button></div>
@@ -182,7 +184,7 @@ export default function CareerExplorer() {
   const [followUps, setFollowUps] = useState<Question[]>([]);
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [report, setReport] = useState<CareerReport | null>(null);
-  const [questionsFallback, setQuestionsFallback] = useState(false);
+  const [questionFallback, setQuestionFallback] = useState<QuestionFallbackReason | null>(null);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [error, setError] = useState("");
   const [offline, setOffline] = useState(false);
@@ -198,7 +200,7 @@ export default function CareerExplorer() {
       try {
         const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null") as SavedState | null;
         if (saved?.profile) {
-          setProfile(saved.profile); setBaseQuestions(saved.questions ?? []); setFollowUps(saved.followUps ?? []);
+          setProfile(saved.profile); setBaseQuestions(saved.questions ?? []); setFollowUps(saved.followUps ?? []); setQuestionFallback(saved.questionFallback ?? null);
           setAnswers(saved.answers?.length === 4 && !saved.report ? saved.answers.slice(0, 3) : saved.answers ?? []);
           setReport(saved.report ?? null); setStage(saved.report ? "report" : saved.stage === "generating_report" ? "questions" : saved.stage);
         }
@@ -207,7 +209,7 @@ export default function CareerExplorer() {
     });
     return () => { window.removeEventListener("online", online); window.removeEventListener("offline", offlineHandler); };
   }, []);
-  useEffect(() => { if (!hydrated) return; const safeStage = stage === "generating_report" ? "questions" : stage; try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ stage: safeStage, profile, questions: baseQuestions, followUps, answers, report, savedAt: new Date().toISOString() } satisfies SavedState)); } catch { /* 浏览器禁用存储时仍允许继续当前会话。 */ } }, [stage, profile, baseQuestions, followUps, answers, report, hydrated]);
+  useEffect(() => { if (!hydrated) return; const safeStage = stage === "generating_report" ? "questions" : stage; try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ stage: safeStage, profile, questions: baseQuestions, followUps, questionFallback, answers, report, savedAt: new Date().toISOString() } satisfies SavedState)); } catch { /* 浏览器禁用存储时仍允许继续当前会话。 */ } }, [stage, profile, baseQuestions, followUps, questionFallback, answers, report, hydrated]);
 
   const selectedFollowUp = useMemo(() => {
     if (answers.length < 3 || followUps.length === 0) return null;
@@ -217,7 +219,7 @@ export default function CareerExplorer() {
   const activeQuestions = useMemo(() => [...baseQuestions, ...(selectedFollowUp ? [selectedFollowUp] : [])], [baseQuestions, selectedFollowUp]);
 
   const goHome = () => { if (stage === "intro" || window.confirm("返回首页不会删除已保存的内容，确定返回吗？")) setStage("intro"); };
-  const generateQuestions = async () => { setLoadingQuestions(true); setError(""); try { const result = await apiCall<QuestionsResponse>({ mode: "generate_questions", requestId: requestId(), profile }); setBaseQuestions(result.questions); setFollowUps(result.followUpCandidates); setAnswers([]); setQuestionsFallback(result.isFallback); setStage("questions"); window.scrollTo({ top: 0, behavior: "smooth" }); } catch (caught) { setError(caught instanceof Error ? caught.message : "问题生成失败，请重试。"); } finally { setLoadingQuestions(false); } };
+  const generateQuestions = async () => { setLoadingQuestions(true); setError(""); try { const result = await apiCall<QuestionsResponse>({ mode: "generate_questions", requestId: requestId(), profile }); setBaseQuestions(result.questions); setFollowUps(result.followUpCandidates); setAnswers([]); setQuestionFallback(result.isFallback ? result.fallbackReason ?? { code: "unavailable", label: "AI 服务暂时不可用" } : null); setStage("questions"); window.scrollTo({ top: 0, behavior: "smooth" }); } catch (caught) { setError(caught instanceof Error ? caught.message : "问题生成失败，请重试。"); } finally { setLoadingQuestions(false); } };
   const generateReport = async (reportAnswers: Answer[]) => { if (reportAnswers.length !== 4) return; setError(""); setStage("generating_report"); window.scrollTo({ top: 0, behavior: "smooth" }); try { const result = await apiCall<CareerReport>({ mode: "generate_report", requestId: requestId(), profile, answers: reportAnswers }); setReport(result); setStage("report"); window.scrollTo({ top: 0, behavior: "smooth" }); } catch (caught) { setError(caught instanceof Error ? caught.message : "报告生成失败，请重试。"); } };
   const updateAnswers = (nextAnswers: Answer[]) => { setAnswers(nextAnswers); if (nextAnswers.length === 4) void generateReport(nextAnswers); };
 
@@ -226,7 +228,7 @@ export default function CareerExplorer() {
     {offline && <div className="offline-banner" role="status">当前处于离线状态。输入已保存；恢复网络后请手动重试。</div>}
     {stage === "intro" && <Intro onStart={() => { setProfile(EMPTY_PROFILE); setError(""); setStage("profile"); }} onExample={() => { setProfile(EXAMPLE_PROFILE); setError(""); setStage("profile"); }} />}
     {stage === "profile" && <ProfileForm profile={profile} setProfile={setProfile} onBack={() => setStage("intro")} onSubmit={generateQuestions} isLoading={loadingQuestions} error={error} />}
-    {stage === "questions" && baseQuestions.length === 3 && <QuestionFlow key={answers.length} questions={activeQuestions} answers={answers} setAnswers={updateAnswers} onBack={() => setStage("profile")} isFallback={questionsFallback} />}
+    {stage === "questions" && baseQuestions.length === 3 && <QuestionFlow key={answers.length} questions={activeQuestions} answers={answers} setAnswers={updateAnswers} onBack={() => setStage("profile")} fallbackReason={questionFallback} />}
     {stage === "generating_report" && <Generating error={error} onRetry={() => void generateReport(answers)} onBack={() => setStage("profile")} />}
     {stage === "report" && report && <ReportView report={report} onModify={() => { setAnswers([]); setStage("questions"); }} onShare={() => setShareStep("permission")} />}
     <ContributionDialog step={shareStep} setStep={setShareStep} profile={profile} draft={shareDraft} setDraft={setShareDraft} />

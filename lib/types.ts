@@ -32,10 +32,18 @@ export interface Question {
   triggerReason?: string;
 }
 
+export type QuestionFallbackCode = "timeout" | "busy" | "connection" | "invalid_response" | "configuration" | "unavailable";
+
+export interface QuestionFallbackReason {
+  code: QuestionFallbackCode;
+  label: string;
+}
+
 export interface QuestionsResponse {
   questions: Question[];
   followUpCandidates: Question[];
   isFallback: boolean;
+  fallbackReason?: QuestionFallbackReason;
   requestId: string;
 }
 

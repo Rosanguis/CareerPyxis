@@ -1,6 +1,6 @@
 import "server-only";
 import { createMockContribution, createMockQuestions, createMockReport } from "../mock-data";
-import type { Answer, CareerReport, CareerSource, ContributionDraft, Profile, QuestionsResponse } from "../types";
+import type { Answer, CareerReport, CareerSource, ContributionDraft, Profile, QuestionFallbackReason, QuestionsResponse } from "../types";
 import { createProvider, ProviderError, type ModelProvider, type WebEvidence } from "./model-provider";
 
 type CandidateDiscovery = {
@@ -65,6 +65,27 @@ function questionsAreValid(value: QuestionsResponse): boolean {
     question.prompt?.length >= 12 && question.options?.length === 3 && question.options.every((option) => option.label && option.insight && option.signals?.length));
 }
 
+function questionFallbackReason(error: unknown): QuestionFallbackReason {
+  if (!(error instanceof ProviderError)) return { code: "unavailable", label: "AI 服务暂时不可用" };
+  switch (error.code) {
+    case "TIMEOUT":
+      return { code: "timeout", label: "AI 响应超时" };
+    case "RATE_LIMIT":
+      return { code: "busy", label: "AI 服务当前请求较多" };
+    case "TRANSPORT_ERROR":
+    case "SEARCH_UNAVAILABLE":
+      return { code: "connection", label: "AI 服务连接异常" };
+    case "EMPTY_RESPONSE":
+    case "INVALID_OUTPUT":
+      return { code: "invalid_response", label: "AI 返回内容格式异常" };
+    case "AUTH_ERROR":
+    case "INSUFFICIENT_BALANCE":
+      return { code: "configuration", label: "AI 服务配置暂时不可用" };
+    case "PROVIDER_SERVER_ERROR":
+      return { code: "unavailable", label: "AI 服务暂时不可用" };
+  }
+}
+
 function reportIsValid(value: CareerReport): boolean {
   const priorities = value.rankedPaths?.map((path) => path.priority).join("");
   const validMentors = new Set(["builder", "investor", "storyteller"]);
@@ -102,18 +123,31 @@ function questionPrompt(profile: Profile) {
 export async function generateQuestions(profileInput: Profile, requestId: string, signal: AbortSignal): Promise<QuestionsResponse> {
   const profile = validateProfile(profileInput);
   if (dataMode() === "mock") return createMockQuestions(profile, requestId);
-  const provider = createProvider();
+  const startedAt = Date.now();
+  let providerId: ModelProvider["id"] | "unavailable" = "unavailable";
   try {
+    const provider = createProvider();
+    providerId = provider.id;
     const value = await withRetry(async (stageSignal) => {
-      const generated = await provider.generateJson<Omit<QuestionsResponse, "isFallback" | "requestId">>(SYSTEM_RULES, questionPrompt(profile), stageSignal);
+      const generated = await provider.generateJson<Omit<QuestionsResponse, "isFallback" | "fallbackReason" | "requestId">>(SYSTEM_RULES, questionPrompt(profile), stageSignal);
       if (!questionsAreValid({ ...generated, isFallback: false, requestId })) throw new ProviderError("个性化题目结构不完整。", "INVALID_OUTPUT", true);
       return generated;
     }, signal, 20_000);
     const result = { ...value, isFallback: false, requestId };
     return result;
-  } catch {
+  } catch (error) {
+    const reason = questionFallbackReason(error);
+    console.warn(JSON.stringify({
+      event: "question_generation_fallback",
+      requestId,
+      stage: "question_generation",
+      provider: providerId,
+      code: error instanceof ProviderError ? error.code : "UNKNOWN",
+      retryable: error instanceof ProviderError ? error.retryable : true,
+      durationMs: Date.now() - startedAt,
+    }));
     const fallback = createMockQuestions(profile, requestId);
-    return { ...fallback, isFallback: true };
+    return { ...fallback, isFallback: true, fallbackReason: reason };
   }
 }
 

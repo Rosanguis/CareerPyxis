@@ -433,7 +433,10 @@ async function verifyBeisen(descriptor: AtsDescriptor, signal: AbortSignal): Pro
   if (!page) return null;
   const plain = htmlText(page);
   if (/职位(?:已下线|不存在|已关闭)|招聘(?:已结束|已停止)|暂无该职位/iu.test(plain)) return null;
-  const heading = page.match(/<h3\b[^>]*>([\s\S]*?)<\/h3>/iu)?.[1];
+  const headings = [...page.matchAll(/<h3\b[^>]*>([\s\S]*?)<\/h3>/giu)]
+    .map((match) => htmlText(match[1]))
+    .filter((item) => item.length >= 3 && !/^(加入我们|职位详情|招聘职位)$/u.test(item));
+  const heading = headings.find((item) => /\(J\d+\)/iu.test(item)) ?? headings.sort((left, right) => right.length - left.length)[0];
   const pageTitle = page.match(/<title\b[^>]*>([\s\S]*?)<\/title>/iu)?.[1];
   const info = page.match(/<div\b[^>]*class=["'][^"']*\bsx\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/iu)?.[1];
   const content = page.match(/<div\b[^>]*class=["'][^"']*\bcontent\b[^"']*["'][^>]*>([\s\S]*?)<\/div>\s*<\/div>/iu)?.[1];
@@ -455,7 +458,7 @@ async function verifyBeisen(descriptor: AtsDescriptor, signal: AbortSignal): Pro
   const publishedAt = plain.match(/发布时间[：:]\s*(20\d{2}[-/.]\d{1,2}[-/.]\d{1,2})/u)?.[1];
   return {
     id: `beisen:${descriptor.site}:${descriptor.jobId}`,
-    title: htmlText(heading),
+    title: heading,
     company: htmlText(pageTitle ?? "").replace(/(?:官方)?招聘.*$/u, "").trim() || displaySiteName(descriptor.site),
     location,
     workMode: /远程|remote/iu.test(location) ? "远程/以岗位说明的地区范围为准" : "现场/混合方式以岗位说明为准",

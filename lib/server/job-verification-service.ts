@@ -283,11 +283,11 @@ async function discoverBeisenApiJobs(
   if (keywords.length === 0) return [];
   const isEarlyCareer = /应届|毕业生|学生|在校|无正式|实习|intern|student|graduate|entry[- ]level|junior/iu.test(profile.experienceSummary);
   const requests = tenants.map(async (tenant) => {
-    const landing = await fetchTextLimited(`https://${tenant.host}/`, AbortSignal.any([parentSignal, AbortSignal.timeout(5_000)]));
+    const landing = tenant.company ? null : await fetchTextLimited(`https://${tenant.host}/`, AbortSignal.any([parentSignal, AbortSignal.timeout(5_000)]));
     const pageTitle = landing?.match(/<title\b[^>]*>([\s\S]*?)<\/title>/iu)?.[1];
     const company = tenant.company || htmlText(pageTitle ?? "").replace(/(?:官方)?招聘.*$/u, "").trim() || displaySiteName(tenant.site);
     const keywordResults = await Promise.all(keywords.map(async (keyword) => {
-    const signal = AbortSignal.any([parentSignal, AbortSignal.timeout(9_000)]);
+    const signal = AbortSignal.any([parentSignal, AbortSignal.timeout(14_000)]);
     const url = `https://${tenant.host}/api/Jobad/GetJobAdPageList`;
     const body = JSON.stringify({
       PageIndex: 0,

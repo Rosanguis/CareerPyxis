@@ -276,8 +276,8 @@ async function discoverBeisenApiJobs(
   type BeisenListResponse = { Code?: number; Data?: BeisenListJob[] };
   const discovered = evidence.map((item) => beisenTenantFromUrl(item.url)).filter((item): item is { site: string; host: string } => Boolean(item));
   const tenants = [...new Map<string, { site: string; host: string; company: string }>([
-    ...discovered.map((item) => [item.host, { ...item, company: "" }] as const),
     ...BEISEN_TENANT_SEEDS.map((item) => [item.host, item] as const),
+    ...discovered.map((item) => [item.host, { ...item, company: "" }] as const),
   ]).values()].slice(0, 2);
   const keywords = domesticApiKeywords(plan);
   if (keywords.length === 0) return [];

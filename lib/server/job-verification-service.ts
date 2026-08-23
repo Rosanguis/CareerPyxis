@@ -289,7 +289,7 @@ async function discoverBeisenApiJobs(
     const pageTitle = landing?.match(/<title\b[^>]*>([\s\S]*?)<\/title>/iu)?.[1];
     const company = tenant.company || htmlText(pageTitle ?? "").replace(/(?:官方)?招聘.*$/u, "").trim() || displaySiteName(tenant.site);
     const keywordResults = await Promise.all(keywords.map(async (keyword) => {
-    const signal = AbortSignal.any([parentSignal, AbortSignal.timeout(22_000)]);
+    const signal = AbortSignal.any([parentSignal, AbortSignal.timeout(12_000)]);
     const url = `https://${tenant.host}/api/Jobad/GetJobAdPageList`;
     const body = JSON.stringify({
       PageIndex: 0,
@@ -613,7 +613,7 @@ async function verifyBeisen(descriptor: AtsDescriptor, signal: AbortSignal): Pro
 }
 
 async function verifyDescriptor(descriptor: AtsDescriptor, parentSignal: AbortSignal): Promise<OfficialJob | null> {
-  const signal = AbortSignal.any([parentSignal, AbortSignal.timeout(8_000)]);
+  const signal = AbortSignal.any([parentSignal, AbortSignal.timeout(descriptor.ats === "Beisen" ? 18_000 : 8_000)]);
   if (descriptor.ats === "Greenhouse") return verifyGreenhouse(descriptor, signal);
   if (descriptor.ats === "Lever") return verifyLever(descriptor, signal);
   if (descriptor.ats === "Ashby") return verifyAshby(descriptor, signal);
@@ -688,12 +688,15 @@ function searchQueries(plan: JobSearchPlan, profile: JobSearchProfile): string[]
   const stage = isEarlyCareer ? "(intern OR internship OR graduate OR junior OR associate OR assistant OR 实习 OR 校招 OR 应届 OR 助理)" : "";
   const startupAts = "(site:boards.greenhouse.io OR site:job-boards.greenhouse.io OR site:job-boards.eu.greenhouse.io OR site:jobs.lever.co OR site:jobs.eu.lever.co OR site:jobs.ashbyhq.com)";
   const enterpriseAts = "(site:jobs.smartrecruiters.com OR site:myworkdayjobs.com)";
-  const domesticTitles = titles([...plan.exactTitles, ...plan.synonymTitles]);
+  const domesticKeywords = domesticApiKeywords(plan);
+  const domesticExact = domesticKeywords[0] ? `"${domesticKeywords[0]}"` : titles([...plan.exactTitles, ...plan.synonymTitles]);
+  const domesticAdjacent = titles(plan.adjacentTitles) || (domesticKeywords[1] ? `"${domesticKeywords[1]}"` : domesticExact);
   return [
     `current open job (${exact}) ${locations} ${stage} ${startupAts}`,
     `current open job (${synonyms}) ${locations} ${stage} ${enterpriseAts}`,
     `正在招聘 (${adjacent}) ${locations} ${stage} (${startupAts} OR ${enterpriseAts})`,
-    `当前 校园招聘 应届 (${domesticTitles}) ${locations} site:zhiye.com (申请职位 OR 我要申请)`,
+    `当前 校园招聘 应届 (${domesticExact}) ${locations} site:zhiye.com (申请职位 OR 我要申请)`,
+    `当前 校园招聘 实习 (${domesticAdjacent}) ${locations} site:zhiye.com (申请职位 OR 我要申请)`,
   ];
 }
 

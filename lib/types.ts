@@ -122,13 +122,15 @@ export interface CareerReport {
 }
 
 export type JobVerificationStatus = "verified" | "empty" | "unavailable" | "mock";
-export type JobAts = "Greenhouse" | "Lever" | "Ashby";
+export type JobAts = "Greenhouse" | "Lever" | "Ashby" | "SmartRecruiters";
+export type JobSearchTier = "exact" | "synonym" | "adjacent";
 
 export interface JobPathInput {
   priority: Priority;
   title: string;
   field: string;
   entryRequirements: string[];
+  targetTasks: string[];
 }
 
 export interface JobSearchProfile {
@@ -151,6 +153,8 @@ export interface VerifiedJob {
   url: string;
   applyUrl: string;
   ats: JobAts;
+  searchTier: JobSearchTier;
+  expansionReason: string;
   publishedAt?: string;
   matchReasons: string[];
   cautions: string[];
@@ -169,6 +173,7 @@ export interface JobVerificationResponse {
   verifiedAt: string;
   message: string;
   notice: string;
+  searchedScopes: string[];
 }
 
 export interface ContributionDraft {

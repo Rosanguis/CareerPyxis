@@ -10,7 +10,7 @@ export interface WebEvidence {
 export interface ModelProvider {
   readonly id: "deepseek" | "openai";
   generateJson<T>(system: string, user: string, signal: AbortSignal): Promise<T>;
-  searchWeb(query: string, signal: AbortSignal): Promise<WebEvidence[]>;
+  searchWeb(query: string, signal: AbortSignal, maxResults?: number): Promise<WebEvidence[]>;
 }
 
 export class ProviderError extends Error {
@@ -96,7 +96,7 @@ export class DeepSeekProvider implements ModelProvider {
     return parseJson<T>(payload.choices?.[0]?.message?.content);
   }
 
-  async searchWeb(query: string, signal: AbortSignal): Promise<WebEvidence[]> {
+  async searchWeb(query: string, signal: AbortSignal, maxResults = 4): Promise<WebEvidence[]> {
     if (!this.key) throw new ProviderError("未配置 DEEPSEEK_API_KEY。", "AUTH_ERROR", false);
     const body = {
       model: this.model,
@@ -143,7 +143,7 @@ export class DeepSeekProvider implements ModelProvider {
         if (item.type !== "web_search_result" || !item.url || seen.has(item.url)) continue;
         seen.add(item.url);
         sources.push({ url: item.url, title: item.title, snippet: snippets.get(item.url), publishedAt: item.page_age });
-        if (sources.length >= 4) return sources;
+        if (sources.length >= maxResults) return sources;
       }
     }
     return sources;
@@ -181,7 +181,7 @@ export class OpenAIProvider implements ModelProvider {
     return parseJson<T>(text);
   }
 
-  async searchWeb(query: string, signal: AbortSignal): Promise<WebEvidence[]> {
+  async searchWeb(query: string, signal: AbortSignal, maxResults = 4): Promise<WebEvidence[]> {
     if (!this.key) throw new ProviderError("未配置 OPENAI_API_KEY。", "AUTH_ERROR", false);
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
@@ -204,7 +204,7 @@ export class OpenAIProvider implements ModelProvider {
       }
     }
     if (byUrl.size === 0) throw new ProviderError("OpenAI 未返回结构化搜索来源。", "SEARCH_UNAVAILABLE", true);
-    return [...byUrl.values()].slice(0, 4);
+    return [...byUrl.values()].slice(0, maxResults);
   }
 }
 

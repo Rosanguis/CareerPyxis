@@ -38,14 +38,15 @@ function isPriority(value: unknown): value is Priority {
 
 function isJobSearchProfile(value: unknown): value is JobSearchProfile {
   if (!isRecord(value)) return false;
-  return isString(value.experienceSummary, 500) && isString(value.location, 100, 1) && isString(value.skills, 500) &&
+  return isString(value.experienceSummary, 500) && isString(value.location, 100) && isString(value.skills, 500) &&
     isStringList(value.likedTasks, 8, 40) && isStringList(value.dislikedTasks, 8, 40) && isStringList(value.workValues, 8, 40);
 }
 
 function isJobPath(value: unknown): value is JobPathInput {
   if (!isRecord(value)) return false;
   return isPriority(value.priority) && isString(value.title, 120, 2) && isString(value.field, 120, 2) &&
-    isStringList(value.entryRequirements, 8, 240) && value.entryRequirements.length > 0;
+    isStringList(value.entryRequirements, 8, 240) && value.entryRequirements.length > 0 &&
+    isStringList(value.targetTasks, 6, 240) && value.targetTasks.length > 0;
 }
 
 function isJobVerificationRequest(value: unknown): value is JobVerificationRequest {

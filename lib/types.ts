@@ -122,7 +122,7 @@ export interface CareerReport {
 }
 
 export type JobVerificationStatus = "verified" | "empty" | "unavailable" | "mock";
-export type JobAts = "Greenhouse" | "Lever" | "Ashby" | "SmartRecruiters";
+export type JobAts = "Greenhouse" | "Lever" | "Ashby" | "SmartRecruiters" | "Workday";
 export type JobSearchTier = "exact" | "synonym" | "adjacent";
 
 export interface JobPathInput {

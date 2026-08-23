@@ -29,7 +29,7 @@ DeepSeek 实现有两类请求：
 
 项目没有单独的 SearchProvider，也不会把 API Key 发往浏览器。
 
-报告生成成功后，前端会对三个职业方向依次调用 `POST /api/job-verification`。该接口沿用同一个 provider 的搜索能力，先生成目标岗位中英文名称、同义方向与相邻起步岗，再并行执行精确和扩展搜索；候选通过 Greenhouse、Lever、Ashby 或 SmartRecruiters 官方公开 API 二次确认是否仍发布。它不会延长主报告等待时间。
+报告生成成功后，前端会对三个职业方向依次调用 `POST /api/job-verification`。该接口沿用同一个 provider 的搜索能力，先把报告方向与内置英文市场别名合并，再生成同义方向与相邻起步岗，并行执行精确、扩展和 Workday/SmartRecruiters 补充搜索；候选通过 Greenhouse、Lever、Ashby、SmartRecruiters 或 Workday 官方公开接口二次确认是否仍发布且仍可申请。它不会延长主报告等待时间。
 
 ## OpenAI 备选模式
 

@@ -162,12 +162,27 @@ export interface VerifiedJob {
   verifiedAt: string;
 }
 
+export interface JobOpportunityLead {
+  id: string;
+  pathTitle: string;
+  title: string;
+  company: string;
+  locationHint: string;
+  url: string;
+  ats: "Beisen";
+  searchTier: JobSearchTier;
+  relationshipNote: string;
+  foundAt: string;
+  status: "needs_confirmation";
+}
+
 export interface JobVerificationResponse {
   requestId: string;
   reportRequestId: string;
   pathTitle: string;
   status: JobVerificationStatus;
   jobs: VerifiedJob[];
+  leads: JobOpportunityLead[];
   checkedCount: number;
   rejectedCount: number;
   verifiedAt: string;

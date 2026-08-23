@@ -2,6 +2,7 @@ import "server-only";
 
 import type {
   JobPathInput,
+  JobOpportunityLead,
   JobSearchTier,
   JobSearchProfile,
   JobVerificationResponse,
@@ -25,6 +26,7 @@ type AtsDescriptor = {
   jobId: string;
   originalUrl: string;
   searchTitle?: string;
+  searchSnippet?: string;
   tenant?: string;
   host?: string;
 };
@@ -166,7 +168,15 @@ function parseAtsUrl(item: WebEvidence): AtsDescriptor | null {
     }
     const site = safeSegment(beisenHost[1]);
     const jobId = safeSegment(rawJobId ?? undefined);
-    if (site && jobId) return { ats: "Beisen", site, jobId, host, originalUrl: item.url, searchTitle: item.title };
+    if (site && jobId) return {
+      ats: "Beisen",
+      site,
+      jobId,
+      host,
+      originalUrl: item.url,
+      searchTitle: item.title,
+      searchSnippet: item.snippet,
+    };
   }
 
   return null;
@@ -711,6 +721,70 @@ function searchedScopes(plan: JobSearchPlan): string[] {
   return scopes;
 }
 
+const BEISEN_COMPANY_NAMES: Record<string, string> = {
+  iflytek: "科大讯飞",
+  kunlunxin: "昆仑芯",
+  smics: "中芯国际",
+};
+
+function roleCore(value: string): string {
+  const normalized = value.toLowerCase();
+  if (/产品经理|product manager/.test(normalized)) return "产品经理";
+  if (/用户研究|ux research|user research/.test(normalized)) return "用户研究";
+  if (/交互设计|interaction design/.test(normalized)) return "交互设计";
+  if (/产品设计|product design|ux design/.test(normalized)) return "产品设计";
+  if (/产品运营|product operations?/.test(normalized)) return "产品运营";
+  if (/产品助理|产品专员/.test(normalized)) return "产品助理";
+  return value.replace(/[（(].*$/u, "").replace(/(?:实习生|助理|专员|工程师|经理|师)$/u, "").trim();
+}
+
+function leadTitle(descriptor: AtsDescriptor): string | null {
+  const pieces = [descriptor.searchTitle ?? "", ...(descriptor.searchSnippet ?? "").split(/[\n。；|]/u)]
+    .map((item) => htmlText(item).replace(/^#+\s*/u, "").trim())
+    .filter((item) => item.length >= 3 && item.length <= 120);
+  return pieces.find((item) => /产品经理|用户研究|交互设计|产品设计|产品助理|产品专员|产品运营/iu.test(item)) ?? null;
+}
+
+function opportunityLeads(
+  descriptors: AtsDescriptor[],
+  verified: Array<OfficialJob | null>,
+  plan: JobSearchPlan,
+  profile: JobSearchProfile,
+  path: JobPathInput,
+): JobOpportunityLead[] {
+  const exactCores = new Set(plan.exactTitles.map(roleCore).filter((item) => item.length >= 2));
+  const synonymCores = new Set(plan.synonymTitles.map(roleCore).filter((item) => item.length >= 2));
+  const adjacentCores = new Set(plan.adjacentTitles.map(roleCore).filter((item) => item.length >= 2));
+  const foundAt = new Date().toISOString();
+  return descriptors.flatMap((descriptor, index): JobOpportunityLead[] => {
+    if (descriptor.ats !== "Beisen" || verified[index]) return [];
+    const searchText = `${descriptor.searchTitle ?? ""} ${descriptor.searchSnippet ?? ""}`;
+    if (!/(?:申请职位|我要申请|立即申请)/u.test(searchText) || /(?:已下线|已关闭|招聘已结束|职位不存在)/u.test(searchText)) return [];
+    const title = leadTitle(descriptor);
+    if (!title) return [];
+    const normalizedTitle = title.toLowerCase();
+    const contains = (cores: Set<string>) => [...cores].some((core) => normalizedTitle.includes(core.toLowerCase()));
+    const searchTier: JobSearchTier | null = contains(exactCores) ? "exact" : contains(synonymCores) ? "synonym" : contains(adjacentCores) ? "adjacent" : null;
+    if (!searchTier) return [];
+    const relationshipNote = searchTier === "exact" ? "职位名称与报告方向一致，但尚未完成官网直连核验。"
+      : searchTier === "synonym" ? "市场名称不同但可能对应相近职责，需打开官网核对。"
+        : "与报告方向共享部分核心任务，仅作为相邻起步机会线索。";
+    return [{
+      id: `lead:${descriptor.site}:${descriptor.jobId}`,
+      pathTitle: path.title,
+      title: title.slice(0, 120),
+      company: BEISEN_COMPANY_NAMES[descriptor.site] ?? `${displaySiteName(descriptor.site)} 企业招聘官网`,
+      locationHint: profile.location.trim() ? `按“${profile.location.trim()}”检索命中，具体地点以官网为准` : "具体工作地点以官网为准",
+      url: descriptor.originalUrl,
+      ats: "Beisen",
+      searchTier,
+      relationshipNote,
+      foundAt,
+      status: "needs_confirmation",
+    }];
+  }).slice(0, 3);
+}
+
 function validAssessment(value: unknown, candidateIds: Set<string>): value is { assessments: FitAssessment[] } {
   if (typeof value !== "object" || value === null || !("assessments" in value) || !Array.isArray(value.assessments)) return false;
   if (value.assessments.length !== candidateIds.size) return false;
@@ -730,7 +804,7 @@ function validAssessment(value: unknown, candidateIds: Set<string>): value is { 
   return valid && returnedIds.size === candidateIds.size && [...candidateIds].every((id) => returnedIds.has(id));
 }
 
-function emptyResponse(requestId: string, reportRequestId: string, pathTitle: string, checkedCount: number, rejectedCount: number, message: string, scopes: string[]): JobVerificationResponse {
+function emptyResponse(requestId: string, reportRequestId: string, pathTitle: string, checkedCount: number, rejectedCount: number, message: string, scopes: string[], leads: JobOpportunityLead[] = []): JobVerificationResponse {
   const verifiedAt = new Date().toISOString();
   return {
     requestId,
@@ -738,6 +812,7 @@ function emptyResponse(requestId: string, reportRequestId: string, pathTitle: st
     pathTitle,
     status: "empty",
     jobs: [],
+    leads,
     checkedCount,
     rejectedCount,
     verifiedAt,
@@ -761,6 +836,7 @@ export async function verifyJobsForPath(
       pathTitle: path.title,
       status: "mock",
       jobs: [],
+      leads: [],
       checkedCount: 0,
       rejectedCount: 0,
       verifiedAt: new Date().toISOString(),
@@ -797,6 +873,8 @@ export async function verifyJobsForPath(
     ...verifiedDescriptors.filter((job): job is OfficialJob => Boolean(job)),
     ...discoveredBeisenJobs,
   ].map((job) => [job.id, job])).values()].slice(0, MAX_OFFICIAL_CANDIDATES);
+  const leads = opportunityLeads(uniqueDescriptors, verifiedDescriptors, plan, profile, path)
+    .filter((lead) => !officialJobs.some((job) => job.id === lead.id.replace(/^lead:/u, "beisen:")));
   if (evidence.length === 0 && officialJobs.length === 0) {
     const failure = searchResults.find((result): result is PromiseRejectedResult => result.status === "rejected");
     if (failure) throw failure.reason;
@@ -806,7 +884,10 @@ export async function verifyJobsForPath(
     return emptyResponse(requestId, reportRequestId, path.title, 0, evidence.length, "本次搜索和企业公开职位列表均未找到可由官方招聘系统确认的具体岗位。", scopes);
   }
   if (officialJobs.length === 0) {
-    return emptyResponse(requestId, reportRequestId, path.title, checkedCount, evidence.length, "候选岗位未通过官方发布状态或申请入口核验，已全部排除。", scopes);
+    const message = leads.length > 0
+      ? `找到 ${leads.length} 条企业官网机会线索，但尚未完成发布状态与申请入口直连核验。`
+      : "候选岗位未通过官方发布状态或申请入口核验，已全部排除。";
+    return emptyResponse(requestId, reportRequestId, path.title, checkedCount, evidence.length, message, scopes, leads);
   }
 
   const fitSignal = AbortSignal.any([signal, AbortSignal.timeout(16_000)]);
@@ -845,7 +926,7 @@ export async function verifyJobsForPath(
   }).slice(0, MAX_VERIFIED_JOBS);
   const rejectedCount = Math.max(checkedCount - jobs.length, 0);
   if (jobs.length === 0) {
-    return emptyResponse(requestId, reportRequestId, path.title, checkedCount, rejectedCount, "官方在招候选与当前已知地区、职业阶段或方向存在冲突，未作为可投岗位展示。", scopes);
+    return emptyResponse(requestId, reportRequestId, path.title, checkedCount, rejectedCount, "官方在招候选与当前已知地区、职业阶段或方向存在冲突，未作为可投岗位展示。", scopes, leads);
   }
   return {
     requestId,
@@ -853,6 +934,7 @@ export async function verifyJobsForPath(
     pathTitle: path.title,
     status: "verified",
     jobs,
+    leads,
     checkedCount,
     rejectedCount,
     verifiedAt,

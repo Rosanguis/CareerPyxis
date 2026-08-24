@@ -1,25 +1,13 @@
 import type { Answer, ExploreRequest, Profile } from "@/lib/types";
 import { generateContribution, generateQuestions, generateReport } from "@/lib/server/explore-service";
 import { ProviderError } from "@/lib/server/model-provider";
+import { protectAiRequest, takeBurstLimit } from "@/lib/server/api-protection";
 
 export const runtime = "nodejs";
 // Leave headroom above the 120s application deadline so Vercel can serialize
 // and return the API's structured timeout response instead of terminating it.
 export const maxDuration = 150;
 const MAX_BODY_BYTES = 32_000;
-const rateBuckets = new Map<string, { count: number; resetAt: number }>();
-
-function isRateLimited(request: Request): boolean {
-  const key = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-  const now = Date.now();
-  const current = rateBuckets.get(key);
-  if (!current || current.resetAt <= now) {
-    rateBuckets.set(key, { count: 1, resetAt: now + 60_000 });
-    return false;
-  }
-  current.count += 1;
-  return current.count > 12;
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -66,7 +54,13 @@ function errorResponse(error: unknown, requestId: string, stage?: string) {
 
 export async function POST(request: Request) {
   const fallbackId = crypto.randomUUID();
-  if (isRateLimited(request)) return errorResponse(new ProviderError("请求过于频繁，请稍后再试。", "RATE_LIMIT", true), fallbackId);
+  const protectionFailure = await protectAiRequest(request, fallbackId);
+  if (protectionFailure) return protectionFailure;
+  const burst = takeBurstLimit(request, "explore", 12, 60_000);
+  if (burst.limited) return Response.json(
+    { error: { code: "RATE_LIMIT", message: "请求过于频繁，请稍后再试。", retryable: true, stage: "request_protection" }, requestId: fallbackId },
+    { status: 429, headers: { "retry-after": String(burst.retryAfterSeconds), "cache-control": "no-store" } },
+  );
   if (!request.headers.get("content-type")?.includes("application/json")) return errorResponse(new ProviderError("请求格式必须是 JSON。", "INVALID_OUTPUT", false), fallbackId);
   const declaredLength = Number(request.headers.get("content-length") ?? 0);
   if (declaredLength > MAX_BODY_BYTES) return Response.json({ error: { code: "INVALID_OUTPUT", message: "请求内容过大。", retryable: false }, requestId: fallbackId }, { status: 413 });

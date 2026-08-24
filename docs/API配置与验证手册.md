@@ -90,4 +90,9 @@ OpenAI 使用 Responses API；职业资料检索使用同一 provider 的 `web_s
 - 永远不要把 Key 写进源代码、截图、前端环境变量或聊天记录。
 - `.env.local` 已被 Git 忽略；只提交 `.env.example`。
 - 轮换任何曾公开展示或误提交的 Key。
+- Production 的两个收费端点采用三层前置门禁：严格同源 / Fetch Metadata 校验、Vercel BotID Basic 无感浏览器验证、可信 `x-vercel-forwarded-for` 客户端地址的单实例突发限流。三层均位于 JSON 解析、联网搜索和模型调用之前。
+- BotID Basic 对所有 Vercel 套餐免费。正常用户从页面操作不会看到验证码；直接 `curl`、Node/Python 脚本或没有完成页面挑战的请求应返回 HTTP 403、`REQUEST_BLOCKED`，且不得调用 DeepSeek。
+- 本地开发默认由 BotID SDK 放行，便于 Mock 调试；不能用本地直连结果证明 Production 防护有效。每次安全相关部署必须同时验证“正式页面正常生成”和“正式 API 直接脚本返回 403”。
+- 当前内存突发限流用于限制单个热实例内的短时重放，不可冒充跨实例全局配额。若升级 Vercel Pro，可在观察日志后为两个 POST 路由增加 WAF Rate Limit；正式拦截前必须按 log → Preview → Production 分阶段发布。
+- 不要给收费端点配置宽泛的 BotID/WAF bypass。确需可信自动化时，必须同时使用不可猜测的服务凭证和固定来源网络，并单独评审。
 - 真实用户数据进入正式产品前必须增加持久化加密、删除机制、审核权限和隐私政策；本 Demo 不声称已具备这些能力。

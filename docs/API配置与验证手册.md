@@ -18,7 +18,13 @@ AI_PROVIDER=deepseek
 DEEPSEEK_API_KEY=sk-...
 AI_MODEL=deepseek-v4-flash
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
+UPSTASH_REDIS_REST_URL=https://你的实例.upstash.io
+UPSTASH_REDIS_REST_TOKEN=你的服务端Token
+CAREER_PYXIS_SESSION_SECRET=至少32位随机服务端密钥
+AI_PROTECTION_GLOBAL_DAILY_CREDITS=1000
 ```
+
+只要 `DATA_MODE=live`，四项安全配置就是必填项；本地 Live 也不例外。Vercel 中推荐通过 Storage / Marketplace 连接免费 Upstash Redis，由集成注入前两项，并让所有变量覆盖 Preview 与 Production。不要给任何一项加 `NEXT_PUBLIC_` 前缀。
 
 重启开发服务器后，从首页完整走一遍。检查报告顶部不再显示 Mock 提示；如果联网搜索失败，允许报告显示缓存降级，但提问与报告生成仍应完成。
 
@@ -60,6 +66,8 @@ OpenAI 使用 Responses API；职业资料检索使用同一 provider 的 `web_s
 - 同义方向和相邻起步岗必须显示 `searchTier` 与 `expansionReason`；排序固定为目标岗位优先、同义方向其次、相邻起步岗最后。扩大的是候选发现范围，不降低官方在招、地区、阶段和申请入口核验标准。
 - 个性化题目降级时，响应包含安全的 `fallbackReason.code` 与 `fallbackReason.label`；页面显示简短原因并继续提供通用题。
 - API 错误不返回密钥、完整模型原文或服务器堆栈。
+- 匿名首测不要求登录：首次有效请求会收到签名、HttpOnly、SameSite=Lax 的会话 Cookie，完整题目→报告→岗位流程可正常完成；伪造报告 ID、画像或路径必须返回 403 `FLOW_REQUIRED`。
+- 相同 `requestId` 和相同请求体返回幂等缓存且不再次调用模型；相同 ID 搭配不同请求体返回 409 `IDEMPOTENCY_CONFLICT`。
 
 ## 2026-08-22 DeepSeek Live 实测记录
 
@@ -90,9 +98,23 @@ OpenAI 使用 Responses API；职业资料检索使用同一 provider 的 `web_s
 - 永远不要把 Key 写进源代码、截图、前端环境变量或聊天记录。
 - `.env.local` 已被 Git 忽略；只提交 `.env.example`。
 - 轮换任何曾公开展示或误提交的 Key。
-- Production 的两个收费端点采用三层前置门禁：严格同源 / Fetch Metadata 校验、Vercel BotID Basic 无感浏览器验证、可信 `x-vercel-forwarded-for` 客户端地址的单实例突发限流。三层均位于 JSON 解析、联网搜索和模型调用之前。
+- Production 的两个收费端点采用四层前置门禁：严格同源 / Fetch Metadata 校验、Vercel BotID Basic 无感浏览器验证、可信客户端地址的单实例短时突发限流、Upstash Redis 原子持久额度与流程授权。四层均位于联网搜索和模型调用之前。
 - BotID Basic 对所有 Vercel 套餐免费。正常用户从页面操作不会看到验证码；直接 `curl`、Node/Python 脚本或没有完成页面挑战的请求应返回 HTTP 403、`REQUEST_BLOCKED`，且不得调用 DeepSeek。
 - 本地开发默认由 BotID SDK 放行，便于 Mock 调试；不能用本地直连结果证明 Production 防护有效。每次安全相关部署必须同时验证“正式页面正常生成”和“正式 API 直接脚本返回 403”。
-- 当前内存突发限流用于限制单个热实例内的短时重放，不可冒充跨实例全局配额。若升级 Vercel Pro，可在观察日志后为两个 POST 路由增加 WAF Rate Limit；正式拦截前必须按 log → Preview → Production 分阶段发布。
+- 匿名会话不是登录账号，也不要求姓名、手机号或邮箱。Cookie 仅携带随机会话 ID 和服务端签名；Redis 中的 IP 只保存 HMAC 摘要。清除 Cookie 虽可获得新会话，但不能绕过 IP 日额度和全站日熔断。
+- 默认加权成本为：问题 2 credits、报告 10、分享草稿 2、单方向岗位核验 7；一次三方向完整旅程约 35 credits。默认单会话日额度 70、IP 日额度 1200；全站日额度必须通过 `AI_PROTECTION_GLOBAL_DAILY_CREDITS` 显式配置。额度在模型调用前扣除，失败不退款，以限制恶意制造超时或错误的成本消耗。
+- 每个操作还有独立尝试上限、每会话并发锁、请求体指纹和 24 小时幂等缓存；相同报告方向的岗位结果复用 15 分钟。题目成功后才能生成同画像报告，报告成功后才能核验其精确路径或生成同画像分享草稿。
+- Live 模式的 Redis、签名密钥或全站日额度缺失/故障时，安全层失败关闭并返回 HTTP 503，不会退化成仅内存限流后继续收费调用。Mock 模式不产生模型费用，可使用进程内存完成本地演示。
+- 单实例内存限流仍用于最靠前的短时突发削峰，Upstash 才承担跨实例持久额度。可在 Vercel WAF 中再加一条路由级速率规则作为外围纵深防御；它不能替代应用内按流程、会话和成本权重的限制。正式拦截前按 log → Preview → Production 分阶段发布。
+- Production 响应启用 Content Security Policy、`frame-ancestors 'none'`、`X-Frame-Options: DENY`、MIME 嗅探保护和受限 Permissions Policy。当前 Next.js hydration 仍需要 `script-src 'unsafe-inline'`，因此 CSP 是纵深防御而不是 nonce 级完全隔离。
 - 不要给收费端点配置宽泛的 BotID/WAF bypass。确需可信自动化时，必须同时使用不可猜测的服务凭证和固定来源网络，并单独评审。
 - 真实用户数据进入正式产品前必须增加持久化加密、删除机制、审核权限和隐私政策；本 Demo 不声称已具备这些能力。
+
+## 匿名安全部署检查表
+
+1. 在 Preview 连接 Upstash Redis，并配置 `CAREER_PYXIS_SESSION_SECRET`、`AI_PROTECTION_GLOBAL_DAILY_CREDITS` 与模型 Key。
+2. 重新部署 Preview；从首页完成一次问题、报告、三方向岗位核验流程，确认浏览器没有 CSP 错误。
+3. 重复点击同一步，确认返回缓存且不会新增模型调用；修改请求体复用旧 `requestId` 应返回 409。
+4. 使用没有页面挑战的直接脚本请求 Production API，确认 BotID 返回 403；使用新匿名浏览器正常首测应成功。
+5. 临时在隔离 Preview 移除一个安全变量，确认有效同源请求返回 503 `PROTECTION_UNAVAILABLE`，随后立即恢复变量并重新部署。
+6. 在 Vercel / Upstash 观察额度键增长与 429，不记录或导出用户画像；根据实际人数调整全站 credits，不能为了避免误拦截而删除全站熔断。

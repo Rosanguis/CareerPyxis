@@ -2,6 +2,7 @@ import type { Answer, ExploreRequest, Profile } from "@/lib/types";
 import { generateContribution, generateQuestions, generateReport } from "@/lib/server/explore-service";
 import { ProviderError } from "@/lib/server/model-provider";
 import { protectAiRequest, takeBurstLimit } from "@/lib/server/api-protection";
+import { aiUsageGuardResponse, createAnonymousAiContext } from "@/lib/server/ai-usage-guard";
 
 export const runtime = "nodejs";
 // Leave headroom above the 120s application deadline so Vercel can serialize
@@ -75,14 +76,49 @@ export async function POST(request: Request) {
     return errorResponse(new ProviderError("请求 JSON 无法解析。", "INVALID_OUTPUT", false), fallbackId);
   }
   const requestId = typeof body.requestId === "string" && body.requestId.length <= 80 ? body.requestId : fallbackId;
-  const hardDeadline = AbortSignal.timeout(120_000);
+  let context: ReturnType<typeof createAnonymousAiContext>;
   try {
-    if (body.mode === "generate_questions") return Response.json(await generateQuestions(body.profile, requestId, hardDeadline));
-    if (body.mode === "generate_report") return Response.json(await generateReport(body.profile, body.answers, requestId, hardDeadline));
-    if (body.mode === "generate_contribution_draft") return Response.json(await generateContribution(body.profile, body.authorized, body.experienceType, hardDeadline));
+    context = createAnonymousAiContext(request);
+    const cached = await context.cached<unknown>(body.mode, requestId, body);
+    if (cached) return context.json(cached);
+    if (body.mode === "generate_report") await context.requireQuestions(body.profile);
+    if (body.mode === "generate_contribution_draft") await context.requireContribution(body.profile);
+  } catch (error) {
+    const response = aiUsageGuardResponse(error, requestId);
+    if (response) return response;
+    return errorResponse(error, requestId, "request_protection");
+  }
+
+  const cost = body.mode === "generate_report" ? 10 : 2;
+  const attempts = body.mode === "generate_questions" ? 3 : 2;
+  const hardDeadline = AbortSignal.timeout(120_000);
+  let lease;
+  try {
+    lease = await context.begin(body.mode, body.mode, cost, attempts, 150);
+    if (body.mode === "generate_questions") {
+      const result = await generateQuestions(body.profile, requestId, hardDeadline);
+      await context.grantQuestions(body.profile);
+      await context.cache(body.mode, requestId, body, result);
+      return context.json(result);
+    }
+    if (body.mode === "generate_report") {
+      const result = await generateReport(body.profile, body.answers, requestId, hardDeadline);
+      await context.grantReport(body.profile, result);
+      await context.cache(body.mode, requestId, body, result);
+      return context.json(result);
+    }
+    if (body.mode === "generate_contribution_draft") {
+      const result = await generateContribution(body.profile, body.authorized, body.experienceType, hardDeadline);
+      await context.cache(body.mode, requestId, body, result);
+      return context.json(result);
+    }
     return errorResponse(new ProviderError("未知的请求模式。", "INVALID_OUTPUT", false), requestId);
   } catch (error) {
+    const guardResponse = aiUsageGuardResponse(error, requestId);
+    if (guardResponse) return context.attach(guardResponse);
     const stage = body.mode === "generate_questions" ? "question_generation" : body.mode === "generate_report" ? "report_generation" : "contribution_draft";
-    return errorResponse(error, requestId, stage);
+    return context.attach(errorResponse(error, requestId, stage));
+  } finally {
+    if (lease) await context.release(lease);
   }
 }

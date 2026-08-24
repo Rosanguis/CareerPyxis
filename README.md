@@ -47,6 +47,10 @@ DATA_MODE=live
 AI_PROVIDER=deepseek
 AI_MODEL=deepseek-v4-flash
 DEEPSEEK_API_KEY=你的服务端密钥
+UPSTASH_REDIS_REST_URL=由 Vercel Upstash 集成注入
+UPSTASH_REDIS_REST_TOKEN=由 Vercel Upstash 集成注入
+CAREER_PYXIS_SESSION_SECRET=至少32位随机服务端密钥
+AI_PROTECTION_GLOBAL_DAILY_CREDITS=1000
 ```
 
 模型通过 OpenAI-compatible Chat Completions 生成 JSON。联网资料使用
@@ -80,11 +84,13 @@ GitHub Actions 始终使用 Mock 模式，不读取真实密钥，也不会产�
 
 - Next.js 16.3 App Router + TypeScript + 普通 CSS；
 - 单页面状态切换，业务接口为 `/api/explore` 和 `/api/job-verification`；
-- 无账号、数据库、支付、真实积分或云端审核；
+- 无登录账号、支付、真实积分或云端审核；Live 模式只使用 Upstash Redis 保存匿名安全额度、流程授权和短期幂等缓存，不保存画像或报告正文作为产品数据；
 - localStorage 只保存匿名探索草稿与待审核分享草稿；
 - 主报告的浏览器请求上限 125 秒、服务端硬截止 120 秒、Vercel 函数上限 150 秒；单方向岗位核验分别为 65/60/75 秒；
 - 不记录完整提示词、用户敏感内容或请求密钥；
-- 两个高成本 API 在 Production 使用 Vercel BotID Basic 无感验证，并在模型调用前执行同源校验和可信客户端 IP 突发限流；正常浏览器无需验证码，直接脚本调用会被拒绝；
+- 两个高成本 API 使用同源校验、Vercel BotID Basic、单实例突发限流和 Upstash 原子持久额度四层门禁；匿名用户无需登录即可完成第一次测试，服务端会用签名 HttpOnly Cookie 绑定题目→报告→岗位核验流程，并按会话、哈希 IP、操作和全站每日 AI credits 限额；
+- 相同请求 ID 与相同输入会复用结果，重复点击不会再次收费；同一报告的岗位核验结果缓存 15 分钟；Live 安全配置缺失时在调用模型前返回 503，不以裸奔方式继续；
+- Production 启用 CSP、禁止被嵌入 iframe、MIME 嗅探和不必要的浏览器能力；
 - Mock / 缓存结果在 UI 中明确标注，不冒充实时生成；
 - DeepSeek 原生搜索适配对齐官方 Harness 的每请求最多 5 次搜索预算；应用层仍限制返回量、官方候选数与超时；
 - 职业资料来源与岗位结果分开：前者支撑职业判断，后者会把报告职位与固定英文市场别名合并，并覆盖同义岗位名和相邻起步岗；国际职位通过 Greenhouse、Lever、Ashby、SmartRecruiters 或 Workday 官方接口核验。国内岗位采用“搜索发现北森企业租户 + 北森公开职位列表 API 扩展具体岗位 + 旧版详情页核验”的混合方案，并为国内候选保留独立配额；只有企业官方系统当前仍列出、地区与职业阶段相容且通过方向初筛的岗位才标记“核验时仍在招”。未完成官网直连核验但满足严格官方域名、详情路径、申请邀请和方向相关性条件的结果，只作为“待打开确认”的企业官网机会，合并显示在“资料有出处，岗位有时效”区域；
@@ -105,3 +111,5 @@ DeepSeek Harness 适配来源、MIT 许可证与本地改动说明见
 真实 API Key 只能配置在 `.env.local` 或 Vercel Sensitive Environment
 Variables 中。任何密钥一旦进入 Git 历史，都必须先轮换，再考虑公开仓库。
 Production 的 `/api/explore` 与 `/api/job-verification` 受 BotID 保护；不要为了兼容外部脚本而移除服务端 `checkBotId()`，也不要为这两个端点配置宽泛的 WAF bypass。
+Live 部署还必须连接 Upstash Redis，并配置 `CAREER_PYXIS_SESSION_SECRET` 与
+`AI_PROTECTION_GLOBAL_DAILY_CREDITS`；这些变量都不能使用 `NEXT_PUBLIC_` 前缀。

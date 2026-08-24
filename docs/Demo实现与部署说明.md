@@ -23,7 +23,8 @@
 - `POST /api/explore` 负责 `questions`、`report`、`contribution`；`POST /api/job-verification` 在报告出现后独立核验单个职业方向。
 - `ModelProvider` 隔离模型差异，默认 DeepSeek，支持切换 OpenAI。
 - `DATA_MODE=mock` 提供无密钥、可重复、稳定的现场演示；`DATA_MODE=live` 才访问真实模型。
-- 画像、回答、报告和分享草稿仅写入当前浏览器 `localStorage`；没有登录、数据库、支付或真实积分。
+- 画像、回答、报告和分享草稿仅写入当前浏览器 `localStorage`；没有登录、账号资料库、支付或真实积分。Live 模式接入 Upstash Redis 只保存匿名安全额度、流程授权、并发锁和短期幂等结果，用于阻止 API 额度滥用，不把它当作用户内容数据库。
+- 新用户无需登录即可完成第一次测试。服务端签发 7 天有效的签名 HttpOnly 匿名会话 Cookie，把题目、报告、岗位核验和贡献草稿绑定为同一条合法流程；Cookie 不能被前端 JavaScript 读取。
 - 主报告的 Vercel / 服务端 / 浏览器时限分别为 150 / 120 / 125 秒。单方向岗位核验分别为 75 / 60 / 65 秒；三个方向串行更新，避免瞬间并发占满模型额度，也让用户先看报告而不是等待招聘检索。
 
 ## 3. DeepSeek 原生联网方案
@@ -90,7 +91,15 @@ DATA_MODE=live
 AI_PROVIDER=deepseek
 DEEPSEEK_API_KEY=你的服务端密钥
 AI_MODEL=deepseek-v4-flash
+UPSTASH_REDIS_REST_URL=由 Vercel Upstash 集成注入
+UPSTASH_REDIS_REST_TOKEN=由 Vercel Upstash 集成注入
+CAREER_PYXIS_SESSION_SECRET=至少32位随机服务端密钥
+AI_PROTECTION_GLOBAL_DAILY_CREDITS=1000
 ```
+
+在 Vercel 项目的 Storage / Marketplace 中连接免费 Upstash Redis，并让集成把 URL 与 Token 注入 Production 和 Preview。`CAREER_PYXIS_SESSION_SECRET` 应使用密码管理器或系统随机源生成，不能与 DeepSeek Key 相同。`AI_PROTECTION_GLOBAL_DAILY_CREDITS=1000` 是首轮测试建议值，大约允许 28 条无重试的完整匿名旅程；它是应用内部的加权保护单位，不等同于模型 token 或人民币。观察一两天实际使用后再调整。
+
+Live 模式缺少 Redis、签名密钥或全站日额度任一项时，接口会在调用 DeepSeek 前返回 HTTP 503 `PROTECTION_UNAVAILABLE`。因此必须先配置 Preview 并完成冒烟测试，再把相同配置应用到 Production；不要先推主分支再补变量。
 
 5. 如果切换 OpenAI：
 
@@ -106,13 +115,14 @@ API Key 只能配置在 Vercel 服务端环境变量，不要使用 `NEXT_PUBLIC
 
 - 主演示建议使用 `DATA_MODE=mock`，保证网络波动、模型限流或密钥额度不会破坏 5 分钟流程。
 - 可额外准备一个 `DATA_MODE=live` 的预览部署展示真实 AI；个性化题目失败时产品会说明安全原因（超时、繁忙、连接、格式、配置或服务不可用），自动切换通用题并允许继续体验。
+- 第一次安全升级后，旧浏览器 `localStorage` 中已有的历史报告没有对应的服务端匿名流程授权；其岗位刷新会提示重新完成一次测试。这是一次性安全迁移，不是报告数据损坏。
 - 演示前用示例画像完整跑一遍，确认 4 道题、三条路径和经验分享弹窗均正常。
 - 不把缓存资料称为“实时搜索”；界面会显示“缓存降级”。
 - 不把“职业资料来源”称为岗位；现场应等待动态核验区至少返回一个方向，再解释官方发布状态、匹配初筛与投递前复查三层边界。
 
 ## 7. 已知边界
 
-- 当前未接数据库、用户账号、正式审核队列、支付和真实积分系统，这是 Demo 的有意取舍。
+- 当前未接产品用户数据库、登录账号、正式审核队列、支付和真实积分系统，这是 Demo 的有意取舍；Upstash 仅承担安全状态，不代表已实现账号或云端报告保存。
 - Mock 报告基于一个设计专业校园项目样例；真实模式的输出仍需人工核验来源与结论。
 - 职业资料受地区、公司规模和岗位级别影响，报告不构成就业保证或职业定论。
 - 岗位核验目前覆盖 Greenhouse、Lever、Ashby、SmartRecruiters、Workday 与北森招聘；报告方向会始终合并常见英文市场职位名，并针对国内应届场景增加中文校招查询。高校就业网、招聘简章和国内求职平台只发现线索，最终链接回到企业北森详情页。同义岗位名和相邻起步岗会显式标注扩展原因，不会伪装成报告中的精确职业。“核验时仍在招”只表示核验时官方接口/详情页仍公开且可申请；“企业官网机会”只表示发现了方向相关的官方详情 URL，必须由用户打开确认，两者不会混标。

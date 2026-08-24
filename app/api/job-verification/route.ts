@@ -1,7 +1,8 @@
-import type { JobPathInput, JobSearchProfile, JobVerificationRequest, Priority } from "@/lib/types";
+import type { JobPathInput, JobSearchProfile, JobVerificationRequest, JobVerificationResponse, Priority } from "@/lib/types";
 import { verifyJobsForPath } from "@/lib/server/job-verification-service";
 import { ProviderError } from "@/lib/server/model-provider";
 import { protectAiRequest, takeBurstLimit } from "@/lib/server/api-protection";
+import { aiUsageGuardResponse, createAnonymousAiContext } from "@/lib/server/ai-usage-guard";
 
 export const runtime = "nodejs";
 export const maxDuration = 75;
@@ -78,9 +79,36 @@ export async function POST(request: Request) {
   }
 
   const signal = AbortSignal.any([request.signal, AbortSignal.timeout(60_000)]);
+  let context: ReturnType<typeof createAnonymousAiContext>;
   try {
-    return Response.json(await verifyJobsForPath(body.profile, body.path, body.requestId, body.reportRequestId, signal));
+    context = createAnonymousAiContext(request);
+    const cached = await context.cached<JobVerificationResponse>("job-verification", body.requestId, body);
+    if (cached) return context.json(cached);
+    await context.requireReport(body.profile, body.reportRequestId, body.path);
+    const recent = await context.cachedJob<JobVerificationResponse>(body.reportRequestId, body.path);
+    if (recent) {
+      const reused = { ...recent, requestId: body.requestId };
+      await context.cache("job-verification", body.requestId, body, reused);
+      return context.json(reused);
+    }
   } catch (error) {
+    const response = aiUsageGuardResponse(error, body.requestId);
+    if (response) return response;
     return errorResponse(error, body.requestId);
+  }
+
+  let lease;
+  try {
+    lease = await context.begin("job-verification", { reportRequestId: body.reportRequestId, path: body.path }, 7, 2, 75);
+    const result = await verifyJobsForPath(body.profile, body.path, body.requestId, body.reportRequestId, signal);
+    await context.cacheJob(body.reportRequestId, body.path, result);
+    await context.cache("job-verification", body.requestId, body, result);
+    return context.json(result);
+  } catch (error) {
+    const guardResponse = aiUsageGuardResponse(error, body.requestId);
+    if (guardResponse) return context.attach(guardResponse);
+    return context.attach(errorResponse(error, body.requestId));
+  } finally {
+    if (lease) await context.release(lease);
   }
 }

@@ -100,7 +100,13 @@ export function JobVerificationPanel({ report, profile, onLeadsChange }: { repor
   const failed = paths.filter((item) => item.status === "error").length;
   const settled = completed + failed;
   const jobs = useMemo(() => paths.flatMap((item) => item.result?.jobs ?? []), [paths]);
-  const leads = useMemo(() => [...new Map(paths.flatMap((item) => item.result?.leads ?? []).map((lead) => [lead.id, lead])).values()], [paths]);
+  const leads = useMemo(() => {
+    const prioritized = new Map<string, JobOpportunityLead>();
+    for (const lead of paths.flatMap((item) => item.result?.leads ?? [])) {
+      if (!prioritized.has(lead.id)) prioritized.set(lead.id, lead);
+    }
+    return [...prioritized.values()];
+  }, [paths]);
   useEffect(() => { onLeadsChange(leads); }, [leads, onLeadsChange]);
   const isRunning = paths.some((item) => item.status === "queued" || item.status === "verifying");
   const allMock = paths.length > 0 && paths.every((item) => item.result?.status === "mock");

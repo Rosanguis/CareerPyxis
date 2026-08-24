@@ -740,7 +740,7 @@ function roleCore(value: string): string {
 
 function leadTitle(descriptor: AtsDescriptor): string | null {
   const pieces = [descriptor.searchTitle ?? "", ...(descriptor.searchSnippet ?? "").split(/[\n。；|]/u)]
-    .map((item) => htmlText(item).replace(/^#+\s*/u, "").trim())
+    .map((item) => htmlText(item).replace(/^#+\s*/u, "").replace(/\s*(?:申请职位|我要申请|立即申请)\s*$/u, "").trim())
     .filter((item) => item.length >= 3 && item.length <= 120);
   return pieces.find((item) => /产品经理|用户研究|交互设计|产品设计|产品助理|产品专员|产品运营/iu.test(item)) ?? null;
 }
